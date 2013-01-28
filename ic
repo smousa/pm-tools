@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+
+CHANGESET=$1
+
+echo "Handling changeset: " $CHANGESET
+
+PATCH_FILE=$(ls ../patches | grep $CHANGESET)
+
+
+
+# Get our ref
+echo -n "Ref? (CHANGESET/zen/parature): "
+read REF
+if [ -x $REF ]; then
+    REF=$(printf "CHANGESET-%s" $CHANGESET)
+fi
+echo "Using REF: " $REF
+
+# Get the commit message
+echo -n "Need commit message: "
+read COMMIT
+MSG=$(printf "%s: (changeset_%s.diff) %s" $REF $CHANGESET $COMMIT)
+
+echo "Using commit message: "
+echo $MSG
+
+echo "Applying patch: " $PATCH_FILE
+patch -p0 < ../$PATCH_FILE
+
+git status -s
+
+# If you want to bail, better ctrl-c!
+echo -n "Commit? (enter means yes)"
+read $DOIT
+
+git add -u
+git commit -m $MSG
