@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+
+# RUN LIKE: batch_zp ZenPacks.zenoss.EnterpriseCollector start_rev end_rev jira_issue
+VERSION=zenoss-4.1.x
+ZENPACK=$1
+
+DEST_DIR=/tmp/zp_diffs/$ZENPACK/
+mkdir -p $DEST_DIR
+
+DIFF_FILE=$DEST_DIR/$2_$3_$4.diff
+svn diff -r $2:$3 http://jgartman@dev.zenoss.com/svnint/branches/$VERSION/zenpacks/$ZENPACK > $DIFF_FILE
+patch --dry-run -p0 < $DIFF_FILE
+
+echo "Patch it?"
+
+#Kick this off while we wait for user feedback.
+COMMIT_MSG=$(jira.sh --action getFieldValue --issue "$4" --field "summary" | head -n2 | tail -n1)
+
+read doit
+
+patch -p0 < $DIFF_FILE
+
+git add -u
+
+git st
+
+OUR_MSG=$(printf "%s: (r%s-r%s) %s" $4 $2 $3 "$COMMIT_MSG")
+echo "Commit with message:"
+echo $(tput setaf 2)$OUR_MSG$(tput sgr0)
+
+echo "Commit?"
+read really_doit
+
+git commit -m "$OUR_MSG"

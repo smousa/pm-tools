@@ -4,34 +4,58 @@ CHANGESET=$1
 
 echo "Handling changeset: " $CHANGESET
 
-PATCH_FILE=$(ls ../patches | grep $CHANGESET)
+PATCH_FILE=$(ls ../../../patches | grep $CHANGESET)
 
+echo "SVN info:"
+SVN_LOG=$(svn log -c $CHANGESET http://jgartman@dev.zenoss.com/svnint)
 
+echo $SVN_LOG
 
-# Get our ref
-echo -n "Ref? (CHANGESET/zen/parature): "
-read REF
-if [ -x $REF ]; then
-    REF=$(printf "CHANGESET-%s" $CHANGESET)
+# This does not handle the following well at all:
+# Fixes ZEN-123, backport ZEN-59 to 4.1.x branch
+REF_TRY=$(echo $SVN_LOG | tr "[a-z]" "[A-Z]" | sed -ne "s/.*\(ZEN-[0-9]*\).*/\1/gp")
+
+if [ -x $REF_TRY ]; then
+    # Get our ref
+    echo -n "Ref? (CHANGESET/zen/parature): "
+    read REF
+    if [ -x $REF ]; then
+        REF=$(printf "CHANGESET-%s" $CHANGESET)
+    fi
+    REF=$(echo "$REF" | tr '[a-z]' '[A-Z]')
+else
+    REF=$REF_TRY
 fi
+
 echo "Using REF: " $REF
 
-# Get the commit message
-echo -n "Need commit message: "
-read COMMIT
-MSG=$(printf "%s: (changeset_%s.diff) %s" $REF $CHANGESET $COMMIT)
 
-echo "Using commit message: "
-echo $MSG
+if [[ $REF == ZEN* ]]; then
+    # This assumes you have jira CLI installed and in your path, and that you 
+    # have modified the script to contain the zenoss user/pass for authentication.
+    COMMIT_MSG=$(jira.sh --action getFieldValue --issue "$REF" --field "summary" | head -n2 | tail -n1)
+    OUR_MSG=$(printf "%s: (changeset_%s.diff) %s" $REF $CHANGESET "$COMMIT_MSG")
+
+else
+    # Get the commit message
+    echo -n "Need commit message: "
+    read COMMIT
+    OUR_MSG=$(printf "%s: (changeset_%s.diff) %s" $REF $CHANGESET "$COMMIT")
+fi
+echo $OUR_MSG
 
 echo "Applying patch: " $PATCH_FILE
-patch -p0 < ../$PATCH_FILE
+patch -p0 < ../../../patches/$PATCH_FILE
 
 git status -s
+
+echo "Using commit message: "
+# 1 = red, 2  = green
+echo $(tput setaf 2)$OUR_MSG$(tput sgr0)
 
 # If you want to bail, better ctrl-c!
 echo -n "Commit? (enter means yes)"
 read $DOIT
 
 git add -u
-git commit -m $MSG
+git commit -m "$OUR_MSG"
