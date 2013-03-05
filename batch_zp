@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # RUN LIKE: batch_zp ZenPacks.zenoss.EnterpriseCollector start_rev end_rev jira_issue
-VERSION=zenoss-4.1.x
+VERSION=zenoss-4.2.x
 ZENPACK=$1
 
 DEST_DIR=/tmp/zp_diffs/$ZENPACK/
@@ -16,7 +16,13 @@ echo "Patch it?"
 #Kick this off while we wait for user feedback.
 COMMIT_MSG=$(jira.sh --action getFieldValue --issue "$4" --field "summary" | head -n2 | tail -n1)
 
+echo "Using commit: " $COMMIT_MSG
+
 read doit
+
+if [ -z COMMIT_MSG ]; then
+    COMMIT_MSG=$doit
+fi
 
 patch -p0 < $DIFF_FILE
 

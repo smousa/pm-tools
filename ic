@@ -1,5 +1,13 @@
 #!/usr/bin/env bash
 
+# RUN THIS SCRIPT FROM src/core!
+# A directory named 'patches' must be in the directory ABOVE the pm-repo and
+# contain all of the RPS patches for that repo.
+
+# MUST HAVE jira cli IN YOUR PATH (jira.sh) and CONFIGURED
+
+# Usage: ic 36974 (changeset number referencing a patch file.)
+
 CHANGESET=$1
 
 echo "Handling changeset: " $CHANGESET
