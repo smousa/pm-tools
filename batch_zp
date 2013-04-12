@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 
+# Get revisions by inspecting svn log --stop-on-copy http://path/to/zenpack/in/4.2.x
 # RUN LIKE: batch_zp ZenPacks.zenoss.EnterpriseCollector start_rev end_rev jira_issue
 VERSION=zenoss-4.2.x
 ZENPACK=$1
