@@ -5,38 +5,79 @@ import optparse
 import os
 import subprocess
 import re
+from clint.textui import puts, indent
+from clint.textui.colored import red, green, yellow, white
 from jira.client import JIRA
 
 
-def run(*cmd):
-    print " ".join(cmd)
+def run(cmd):
+    puts(white("Running command: ") + cmd)
     try:
-        output = subprocess.check_output(cmd, stderr=subprocess.STDOUT)
+        output = subprocess.check_output(cmd.split(' '), stderr=subprocess.STDOUT)
     except Exception:
-        print "Error running command: %r" % cmd
+        with indent(4):
+            puts(red("Error running command: ") + cmd)
         raise
     return output
+
+
+def yn(prompt):
+    keep_going = raw_input(prompt).strip()
+    if keep_going.lower() in ('y', 'yes'):
+        keep_going = True
+    else:
+        keep_going = False
+
+    if not keep_going:
+        raise Exception("Bailing.")
 
 
 def main(repo, jira, changeset):
     # find changeset number
     changeset_number = re.sub('\D', '', changeset)
-    print 'Working on changeset: %s' % changeset_number
+    puts(white("Working on changeset: ") + changeset_number)
 
     # find JIRA issue
     _cmd = 'svn log -c %s http://dev.zenoss.com/svnint' % changeset_number
-    svn_log = run(_cmd.split(' '))
-    print 'Subversion commit message:'
-    print svn_log
+    svn_log = run(_cmd)
+    puts(white("Subversion commit message:"))
+    with indent(4):
+        puts(svn_log)
     issue_try = re.search('.*(?P<issue>ZEN-[0-9]*).*', svn_log)
-    issue = issue_try.group('issue')
-    print 'Found issue: %s' % issue
+
+    try:
+        issue = issue_try.group('issue')
+        puts(green("Found Issue: ") + issue)
+    except Exception:
+        puts(yellow("Could not find issue."))
+        issue = raw_input('Issue: ').strip()
+    puts(white('Using Issue: ' + issue))
 
     # create commit message
+    commit_body = svn_log.split("\n")[3]
+    puts(white("Using commit body of:"))
+    with indent(4):
+        puts(commit_body)
+
+    yn('Continue? ')
+
     # create new branch for issue
+    _branch_cmd = "git --git-dir=%s/.git checkout -b %s" % (repo, issue)
+    puts(white("Creating branch."))
+    run(_branch_cmd)
+
     # apply changeset to repo
+    changeset_path = os.path.realpath(changeset)
+    _patch_cmd = "patch --directory=%s -p0 -i %s" % (os.path.join(repo, 'src', 'core'), changeset_path)
+    puts(white("Patching repository with changeset: ") + changeset)
+    run(_patch_cmd)
+
     # review and commit
-    pass
+    _status_cmd = "git --git-dir=%s/.git status"
+    run(_status_cmd)
+
+    yn("Commit and push changes to origin? ")
+    puts(red("Not committing yet."))
 
 
 def find_jira(config_file):
