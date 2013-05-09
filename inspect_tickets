@@ -2,65 +2,21 @@
 
 import yaml
 import optparse
+import subprocess
+import re
 from clint.textui import puts, indent
 from clint.textui.colored import red, green, yellow, white
 from jira.client import JIRA
 
-tickets = """ZEN-6585
-ZEN-5985
-ZEN-6524
-ZEN-5676
-ZEN-6568
-ZEN-6339
-ZEN-6329
-ZEN-6249
-ZEN-6262
-ZEN-6445
-ZEN-5985
-ZEN-5086
-ZEN-6264
-ZEN-5086
-ZEN-5738
-ZEN-5726
-ZEN-6008
-ZEN-5598
-ZEN-5561
-ZEN-5575
-ZEN-5561
-ZEN-5396
-ZEN-5417
-ZEN-5175
-ZEN-5224
-ZEN-4669
-ZEN-5131
-ZEN-5139
-ZEN-5307
-ZEN-5138
-ZEN-5324
-ZEN-5220
-ZEN-5222
-ZEN-3992
-ZEN-4669
-ZEN-5284
-ZEN-6462
-ZEN-5104
-ZEN-5018
-ZEN-4669
-ZEN-5076
-ZEN-5023
-ZEN-5708
-ZEN-5001
-ZEN-4669
-ZEN-5708
-ZEN-6007
-ZEN-5708
-ZEN-5708
-ZEN-6005
-ZEN-5708
-ZEN-6255
-ZEN-5708
-ZEN-5561
-ZEN-4639"""
+
+def run(cmd):
+    try:
+        output = subprocess.check_output(cmd.split(' '), stderr=subprocess.STDOUT)
+    except Exception:
+        with indent(4):
+            puts(red("Error running command: ") + cmd)
+        raise
+    return output
 
 
 def find_jira(config_file):
@@ -77,23 +33,44 @@ def find_jira(config_file):
 
 
 def main(jira, tickets):
+    import time
     for issue in tickets:
-        fixVersions = [x.name for x in jira.issue(issue).fields.fixVersions.value]
+        jissue = jira.issue(issue)
+        fixVersions = [x.name for x in jissue.fields.fixVersions.value]
         versions = []
         for f in fixVersions:
             if 'rps' in f.lower():
                 versions.append(str(green(f)))
             else:
                 versions.append(str(red(f)))
-
-        puts(white('%s -> ' % issue) + ', '.join(versions))
+        issue_type = jissue.fields.issuetype.value._session['name']
+        if issue_type == 'Patch':
+            issue_type = green('Patch')
+        else:
+            issue_type = red(issue_type)
+        puts(white(issue) + ' -> ' + issue_type + ' => ' + ', '.join(versions))
+        time.sleep(1)
 
 
 if __name__ == '__main__':
     parser = optparse.OptionParser()
     (options, args) = parser.parse_args()
-    jira_config = args[0]
+    working_dir = args[0]
+    jira_config = args[1]
 
     jira = find_jira(jira_config)
 
-    main(jira, tickets.split("\n"))
+    git_cmd = "git --git-dir=%s/.git log --pretty=oneline" % working_dir
+    git_log = run(git_cmd)
+    tickets = []
+    git_log = git_log.split("\n")
+    for l in git_log:
+        issue_try = re.search('.*(?P<issue>ZEN-[0-9]*).*', l)
+        try:
+            issue = issue_try.group('issue')
+            tickets.append(issue)
+        except:
+            puts("Could not find jira issue: %s" % l)
+    tickets.sort()
+    print tickets
+    main(jira, tickets)
