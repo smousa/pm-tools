@@ -1,36 +1,50 @@
 #!/usr/bin/env bash
 
-# RUN THIS SCRIPT FROM src/core!
-# A directory named 'patches' must be in the directory ABOVE the pm-repo and
-# contain all of the RPS patches for that repo.
-
-# MUST HAVE jira cli IN YOUR PATH (jira.sh) and CONFIGURED
-
+#
 # Usage: ic 36974 (changeset number referencing a patch file.)
+#
+# make sure you export RPS_PATCHES, RPS_REPO dirs.
+# make sure you export RPS_AS_OF revision.
+#
+
+set -u
+echo "RPS Patches:     " $RPS_PATCHES
+echo "RPS Repository:  " $RPS_REPO
+echo "RPS Revision:    " $RPS_AS_OF
+echo 
+
+pushd $RPS_REPO
 
 CHANGESET=$1
+PATCH_FILE=$(ls $RPS_PATCHES | grep $CHANGESET)
 
-echo "Handling changeset: " $CHANGESET
+echo "============================================="
+echo "SVN Info for changeset: $CHANGESET"
+echo "============================================="
 
-PATCH_FILE=$(ls ../../../patches | grep $CHANGESET)
-
-echo "SVN info:"
-SVN_LOG=$(svn log -c $CHANGESET http://jgartman@dev.zenoss.com/svnint)
-
+echo "==> Commit message for last change to file:"
+SVN_LOG=$(svn log -vl1 $RPS_PATCHES/$PATCH_FILE)
 echo $SVN_LOG
+
+echo "==> Commit message for changeset named in file name:"
+CHANGESET_LOG=$(svn log -c $CHANGESET http://jgartman@dev.zenoss.com/svnint)
+echo $CHANGESET_LOG
+
+
 
 # This does not handle the following well at all:
 # Fixes ZEN-123, backport ZEN-59 to 4.1.x branch
 REF_TRY=$(echo $SVN_LOG | tr "[a-z]" "[A-Z]" | sed -ne "s/.*\(ZEN-[0-9]*\).*/\1/gp")
 
 if [ -x $REF_TRY ]; then
+
+
+
     # Get our ref
-    echo -n "Ref? (CHANGESET/zen/parature): "
+    echo "NO ISSUE FOUND. YOU PROBABLY NEED TO CREATE ONE."
+    echo -n "Issue number? "
     read REF
-    if [ -x $REF ]; then
-        REF=$(printf "CHANGESET-%s" $CHANGESET)
-    fi
-    REF=$(echo "$REF" | tr '[a-z]' '[A-Z]')
+    REF=$(echo "ZEN-$REF" | tr '[a-z]' '[A-Z]')
 else
     REF=$REF_TRY
 fi
@@ -38,22 +52,17 @@ fi
 echo "Using REF: " $REF
 
 
-if [[ $REF == ZEN* ]]; then
-    # This assumes you have jira CLI installed and in your path, and that you 
-    # have modified the script to contain the zenoss user/pass for authentication.
-    COMMIT_MSG=$(jira.sh --action getFieldValue --issue "$REF" --field "summary" | head -n2 | tail -n1)
-    OUR_MSG=$(printf "%s: (changeset_%s.diff) %s" $REF $CHANGESET "$COMMIT_MSG")
-
-else
-    # Get the commit message
-    echo -n "Need commit message: "
-    read COMMIT
-    OUR_MSG=$(printf "%s: (changeset_%s.diff) %s" $REF $CHANGESET "$COMMIT")
-fi
+# Get the commit message
+echo -n "Need commit message: "
+read COMMIT
+OUR_MSG=$(printf "%s: (changeset_%s.diff) %s (as of RPS revision %s)" $REF $CHANGESET "$COMMIT" $RPS_AS_OF)
 echo $OUR_MSG
 
+
 echo "Applying patch: " $PATCH_FILE
-patch -p0 < ../../../patches/$PATCH_FILE
+pushd $RPS_REPO/src/core
+patch -p0 < $RPS_PATCHES/$PATCH_FILE
+popd
 
 git status -s
 
@@ -63,7 +72,7 @@ echo $(tput setaf 2)$OUR_MSG$(tput sgr0)
 
 # If you want to bail, better ctrl-c!
 echo -n "Commit? (enter means yes)"
-read $DOIT
+read DOIT
 
 git add -u
 git commit -m "$OUR_MSG"
