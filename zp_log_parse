@@ -34,7 +34,7 @@ def chunk_gen(revision_data):
 def main(zenpack, stop_at_revision):
     svn_cmd = "svn -r 0:%s log --xml --stop-on-copy http://dev.zenoss.com/svnint/branches/zenoss-4.2.x/zenpacks/%s" % (stop_at_revision, zenpack)
     svn_xml_log_data = run(svn_cmd)
-    root = ET.fromstring(svn_xml_log)
+    root = ET.fromstring(svn_xml_log_data)
 
     revisions = dict()
 
@@ -81,20 +81,30 @@ def main(zenpack, stop_at_revision):
         else:
             jira_issue_ranges.append(rev)
 
-    pprint.pprint(jira_issue_ranges)
-
     this_revision = None
     next_revision = None
     for idx in xrange(len(jira_issue_ranges)):
-        this_revision = jira_issue_ranges[idx]
+        this_revision = jira_issue_ranges[idx][0]
 
-        if not idx in jira_issue_ranges:
-            # we are done
+        if idx + 1 >= len(jira_issue_ranges):
+            puts(red("Breaking because we are done."))
             break
 
-        next_revision = jira_issue_ranges[idx+1]
+        next_revision = jira_issue_ranges[idx + 1][0]
 
-        diff_cmd = "svn diff -r %s:%s 
+        #
+        #
+        # HAVE FUN FIGURING THIS OUT, SUMMER
+        #
+        #
+        diff_cmd = "svn diff -r %s:%s http://dev.zenoss.com/svnint/branches/zenoss-4.2.x/zenpacks/%s" % (this_revision, next_revision, zenpack)
+        svn_diff_cmd = subprocess.Popen(diff_cmd.split(' '), stdout=subprocess.PIPE)
+        filterdiff_cmd = subprocess.Popen(['filterdiff'], stdin=svn_diff_cmd.stdout)
+
+        diff_result = run(diff_cmd)
+        puts(green("Filtered diff for revisions: %s:%s" % (this_revision, next_revision)))
+        with indent(4):
+            puts(diff_result)
 
 
 if __name__ == '__main__':
