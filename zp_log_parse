@@ -10,33 +10,28 @@ from clint.textui.colored import red, green, white
 import xml.etree.ElementTree as ET
 
 
-def run(cmd):
+SVN_REPO = "http://dev.zenoss.com/svnint"
+SVN_RPS = "branches/core/zenoss-4.2.3-patches/packs"
+SVN_BRANCH = "branches/zenoss-4.2.x/zenpacks"
+
+def run(cmd, stdin=None):
     try:
-        output = subprocess.check_output(cmd.split(' '), stderr=subprocess.STDOUT)
+        output = subprocess.check_output(cmd.split(), stderr=subprocess.STDOUT, stdin=stdin)
     except Exception:
         with indent(4):
             puts(red("Error running command: ") + cmd)
         raise
     return output
 
-
-def chunk_gen(revision_data):
-    revision_data = iter(revision_data)
-    while True:
-        try:
-            x = revision_data.next()
-            if x[1] is not None:
-                yield x
-        except StopIteration:
-            break
-
-
 def main(zenpack, stop_at_revision):
-    svn_cmd = "svn -r 0:%s log --xml --stop-on-copy http://dev.zenoss.com/svnint/branches/zenoss-4.2.x/zenpacks/%s" % (stop_at_revision, zenpack)
-    svn_xml_log_data = run(svn_cmd)
+    SVN_ZENPACK = os.path.join(SVN_REPO, SVN_BRANCH, zenpack)
+
+    svn_log_cmd = "svn -r0:%s log --xml --stop-on-copy %s" % (stop_at_revision, SVN_ZENPACK) 
+    svn_xml_log_data = run(svn_log_cmd)
     root = ET.fromstring(svn_xml_log_data)
 
     revisions = dict()
+    jira_issue_pattern = re.compile(r'(ZEN\-\d+)', re.M | re.I)
 
     for logentry in root:
         commit_msg = logentry.find('msg').text
@@ -44,13 +39,12 @@ def main(zenpack, stop_at_revision):
 
         # find all jira issues referenced
         jira_issues = []
-        jira_issue_pattern = re.compile(r'(ZEN\-\d+)', re.M | re.I)
         jira_issues = jira_issue_pattern.findall(commit_msg)
 
         # if more than one jira issue found, dump the whole message and let
         # user decide which to use
         if len(jira_issues) > 1:
-            puts(white(commit_revision + ': ') + red('Found more than one jira isse!'))
+            puts(white(commit_revision + ': ') + red('Found more than one jira issue!'))
             with indent(4):
                 puts(white("Commit message was:"))
                 puts(commit_msg)
@@ -68,44 +62,30 @@ def main(zenpack, stop_at_revision):
     puts("Done finding issues.")
 
     revision_data = revisions.values()
-    revision_data.sort(key=lambda d: d[0])
+    revision_data.sort(key=lambda d: int(d[0]))
 
     # print out the stuff so the human can see what's going on
     for d in revision_data:
         print "%s -> %s -> %s" % d
 
-    jira_issue_ranges = [revision_data[0]]
-    for rev in chunk_gen(revision_data):
-        if rev is None:
-            break
-        else:
-            jira_issue_ranges.append(rev)
+    start = None
 
-    this_revision = None
-    next_revision = None
-    for idx in xrange(len(jira_issue_ranges)):
-        this_revision = jira_issue_ranges[idx][0]
+    for changeset, ticket, message in revision_data:
+        if ticket is not None:
+            if start is not None:
+                svn_diff_cmd = "svn diff -r%s:%s %s" % (start, changeset, SVN_ZENPACK)
+                svn_diff = subprocess.Popen(svn_diff_cmd.split(), stdout=subprocess.PIPE)
+                output = subprocess.check_output(['filterdiff'], stdin=svn_diff.stdout)
+                svn_diff.wait()
 
-        if idx + 1 >= len(jira_issue_ranges):
-            puts(red("Breaking because we are done."))
-            break
-
-        next_revision = jira_issue_ranges[idx + 1][0]
-
-        #
-        #
-        # HAVE FUN FIGURING THIS OUT, SUMMER
-        #
-        #
-        diff_cmd = "svn diff -r %s:%s http://dev.zenoss.com/svnint/branches/zenoss-4.2.x/zenpacks/%s" % (this_revision, next_revision, zenpack)
-        svn_diff_cmd = subprocess.Popen(diff_cmd.split(' '), stdout=subprocess.PIPE)
-        filterdiff_cmd = subprocess.Popen(['filterdiff'], stdin=svn_diff_cmd.stdout)
-
-        diff_result = run(diff_cmd)
-        puts(green("Filtered diff for revisions: %s:%s" % (this_revision, next_revision)))
-        with indent(4):
-            puts(diff_result)
-
+                puts(green("Filtered diff for revisions: %s:%s" % (start, changeset)))
+                with indent(4):
+                    puts(output)
+            start = changeset
+    else:
+        if ticket is None:
+            print "Unable to find ticket for r%s:%s" % (start, changeset)
+        
         # after we get the diffs, probably shove into files
         # after we get all the files, need to use 'patch' and apply them to the
         # git repository, which we were assuming would be your current working
