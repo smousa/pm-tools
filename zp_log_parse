@@ -1,0 +1,105 @@
+#!/usr/bin/env python
+
+import sys
+import os
+import re
+import pprint
+import subprocess
+from clint.textui import puts, indent
+from clint.textui.colored import red, green, white
+import xml.etree.ElementTree as ET
+
+
+def run(cmd):
+    try:
+        output = subprocess.check_output(cmd.split(' '), stderr=subprocess.STDOUT)
+    except Exception:
+        with indent(4):
+            puts(red("Error running command: ") + cmd)
+        raise
+    return output
+
+
+def chunk_gen(revision_data):
+    revision_data = iter(revision_data)
+    while True:
+        try:
+            x = revision_data.next()
+            if x[1] is not None:
+                yield x
+        except StopIteration:
+            break
+
+
+def main(zenpack, stop_at_revision):
+    svn_cmd = "svn -r 0:%s log --xml --stop-on-copy http://dev.zenoss.com/svnint/branches/zenoss-4.2.x/zenpacks/%s" % (stop_at_revision, zenpack)
+    svn_xml_log_data = run(svn_cmd)
+    root = ET.fromstring(svn_xml_log)
+
+    revisions = dict()
+
+    for logentry in root:
+        commit_msg = logentry.find('msg').text
+        commit_revision = logentry.attrib['revision']
+
+        # find all jira issues referenced
+        jira_issues = []
+        jira_issue_pattern = re.compile(r'(ZEN\-\d+)', re.M | re.I)
+        jira_issues = jira_issue_pattern.findall(commit_msg)
+
+        # if more than one jira issue found, dump the whole message and let
+        # user decide which to use
+        if len(jira_issues) > 1:
+            puts(white(commit_revision + ': ') + red('Found more than one jira isse!'))
+            with indent(4):
+                puts(white("Commit message was:"))
+                puts(commit_msg)
+
+            jira_issue = raw_input("Use which issue number? ")
+            # prepend 'ZEN-' because typing it is annoying
+            revisions[commit_revision] = (commit_revision, 'ZEN-'+jira_issue, commit_msg.replace("\n", "^"))
+
+        elif len(jira_issues) == 1:
+            puts(white(commit_revision + ": Found one jira issue: ") + green(jira_issues[0]))
+            revisions[commit_revision] = (commit_revision, jira_issues[0], commit_msg.replace("\n", "^"))
+        else:
+            revisions[commit_revision] = (commit_revision, None, commit_msg.replace("\n", "^"))
+
+    puts("Done finding issues.")
+
+    revision_data = revisions.values()
+    revision_data.sort(key=lambda d: d[0])
+
+    # print out the stuff so the human can see what's going on
+    for d in revision_data:
+        print "%s -> %s -> %s" % d
+
+    jira_issue_ranges = [revision_data[0]]
+    for rev in chunk_gen(revision_data):
+        if rev is None:
+            break
+        else:
+            jira_issue_ranges.append(rev)
+
+    pprint.pprint(jira_issue_ranges)
+
+    this_revision = None
+    next_revision = None
+    for idx in xrange(len(jira_issue_ranges)):
+        this_revision = jira_issue_ranges[idx]
+
+        if not idx in jira_issue_ranges:
+            # we are done
+            break
+
+        next_revision = jira_issue_ranges[idx+1]
+
+        diff_cmd = "svn diff -r %s:%s 
+
+
+if __name__ == '__main__':
+    # zp_log_parse ZenPack.zenoss.ZenPack 49762
+    zenpack = sys.argv[1]
+    stop_at_revision = sys.argv[2]
+
+    main(zenpack, stop_at_revision)
