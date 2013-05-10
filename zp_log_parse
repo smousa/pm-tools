@@ -106,6 +106,12 @@ def main(zenpack, stop_at_revision):
         with indent(4):
             puts(diff_result)
 
+        # after we get the diffs, probably shove into files
+        # after we get all the files, need to use 'patch' and apply them to the
+        # git repository, which we were assuming would be your current working
+        # directory. can make another command line arg for that if we really
+        # want.
+
 
 if __name__ == '__main__':
     # zp_log_parse ZenPack.zenoss.ZenPack 49762
